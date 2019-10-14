@@ -8,21 +8,21 @@ import * as path from 'path';
  * User's name and email pull from git settings
  */
 interface GitSettings {
-  name: string,
-  email: string,
+  name: string;
+  email: string;
 }
 
 interface Placeholders {
-  [key: string]: string,
-};
+  [key: string]: string;
+}
 
 /**
  * What is returned by `git-config`
  */
 interface GitSync {
   user: {
-    [key: string]: string,
-  }
+    [key: string]: string;
+  };
 }
 
 /**
@@ -30,20 +30,21 @@ interface GitSync {
  * the replacement
  */
 interface Replacement {
-  [key: string]: string,
-  author: string,
-  createDate: string,
-  email: string,
-  item: string,
-  Item: string,
-  ITEM: string,
-  items: string,
-  Items: string,
-  ITEMS: string,
-  name: string,
-  Name: string,
-  NAME: string,
-  url: string,
+  [key: string]: string;
+  author: string;
+  copyright: string;
+  createDate: string;
+  email: string;
+  item: string;
+  Item: string;
+  ITEM: string;
+  items: string;
+  Items: string;
+  ITEMS: string;
+  name: string;
+  Name: string;
+  NAME: string;
+  url: string;
 }
 
 export default class Create extends Command {
@@ -60,7 +61,7 @@ export default class Create extends Command {
    * @var  {string[]}
    */
   static examples = [
-    `$ combuilder create NAME VIEW`,
+    '$ combuilder create NAME VIEW',
   ];
 
   static flags = {
@@ -95,6 +96,18 @@ export default class Create extends Command {
       description: 'populate author and email metadata with name and email from git configuration',
       required: false
     }),
+
+    template: flags.string({
+      char: 't',
+      description: 'specifies which skeleton template to use when creating component',
+      required: false
+    }),
+
+    copyright: flags.string({
+      char: 'c',
+      description: 'specify the copyright to add to the code.',
+      required: false
+    })
   };
 
   /**
@@ -115,6 +128,38 @@ export default class Create extends Command {
     }
   ];
 
+  async run() {
+    const {args, flags} = this.parse(Create);
+    // Use default skeleton template if -t is not specified. This conforms to
+    // Joomla's code styling guide
+    let template = 'default';
+    // Check if user provided a specified template
+    if (flags.template) {
+      template = flags.template;
+    }
+    // Resolve path to this packages skeleton template directory specified
+    const skeleton = path.resolve(__dirname, `../../templates/skeleton/${template}`);
+    // Check if skeleton template exists before proceeding
+    if (!fs.existsSync(skeleton)) {
+      this.error(`Specified template, "${template}", does not exist`, {
+        exit: 2
+      });
+    }
+    // Create component with com_ prefix
+    const comName = `com_${args.name}`;
+    // Create component directory
+    fs.mkdirSync(comName);
+    // Copy over template to new directory
+    extra.copySync(skeleton, comName);
+    // Rename placeholder files in newly created component source
+    this.renameFiles(comName, args.name, args.view);
+    // Replace data if information provided via arguments
+    // (@see this.createReplacementData())
+    this.replaceData(comName);
+
+    this.log(`${comName} successfully created`);
+  }
+
   /**
    * Create object replacement data based on CLI arguments
    *
@@ -122,21 +167,21 @@ export default class Create extends Command {
    *                         replacement
    */
   protected createReplacementData(): Replacement {
-    const { args, flags } = this.parse(Create);
+    const {args, flags} = this.parse(Create);
     // Try to pull component metadata from user arguments
     let author = '';
     if (flags.author) {
       author = flags.author;
     }
 
+    // Use current date if none provided by user
+    const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'];
+    const date = new Date();
     let createDate = '';
     if (flags.createDate) {
       createDate = flags.createDate;
     } else {
-      // Use current date if none provided by user
-      const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
-        'July', 'August', 'September', 'October', 'November', 'December'];
-      const date = new Date();
       createDate = `${monthNames[date.getMonth()]} ${date.getFullYear()}`;
     }
 
@@ -146,7 +191,7 @@ export default class Create extends Command {
     }
 
     let url = '';
-    if  (flags.url) {
+    if (flags.url) {
       url = flags.url;
     }
 
@@ -158,25 +203,33 @@ export default class Create extends Command {
       email = gitSettings.email;
     }
 
+    let copyright = '';
+    if (flags.copyright) {
+      copyright = flags.copyright;
+    } else {
+      //Use current date and year in copyright by default
+      copyright = date.getFullYear() + ' ' + author + '. All Rights Reserved.';
+    }
+
     // Conveniently capitalize strings
     const capitalize = (s: string): string => {
-      if (typeof s !== 'string') return '';
       return s.charAt(0).toUpperCase() + s.slice(1);
-    }
+    };
+
     // Format component name as lowercase, class case, and uppercase
-    let name = <string>args.name;
+    let name = args.name as string;
     let Name = capitalize(name);
     let NAME = name.toUpperCase();
     // Format view name as lowercase, class case, and uppercase
-    let item = <string>args.view;
+    let item = args.view as string;
     let Item = capitalize(item);
     let ITEM = item.toUpperCase();
     // Make view plural for list view
     let items = `${item}s`;
     let Items = `${Item}s`;
     let ITEMS = `${ITEM}S`;
-    return {author, createDate, email, item, Item, ITEM, items, Items, ITEMS,
-      name, Name, NAME, url,}
+    return {author, copyright, createDate, email, item, Item, ITEM, items, Items, ITEMS,
+      name, Name, NAME, url};
   }
 
   /**
@@ -186,30 +239,11 @@ export default class Create extends Command {
    *                         settings
    */
   protected getGitSettings(): GitSettings {
-    const settings = <GitSync>gitConfig.sync();
+    const settings = gitConfig.sync() as GitSync;
     return {
       name: settings.user.name,
       email: settings.user.email,
-    }
-  }
-
-  async run() {
-    const { args } = this.parse(Create);
-    // Create component with com_ prefix
-    const comName = `com_${args.name}`;
-    // Create component directory
-    fs.mkdirSync(comName);
-    // Resolve path to this packages skeleton template directory
-    const skeleton = path.resolve(__dirname, '../../templates/skeleton');
-    // Copy over template to new directory
-    extra.copySync(skeleton, comName);
-    // Rename placeholder files in newly created component source
-    this.renameFiles(comName, args.name, args.view);
-    // Replace data if information provided via arguments
-    // (@see this.createReplacementData())
-    this.replaceData(comName);
-
-    this.log(`${comName} successfully created`);
+    };
   }
 
   /**
@@ -270,29 +304,33 @@ export default class Create extends Command {
     let replacements = this.createReplacementData();
 
     for (let item of items) {
-      // Build path to current item, if this is a directory it will be passed
-      // to next recursive call
-      let nextPath = `${path}/${item}`;
-      // Check if item is a file to determine file level find and replace is
-      // warranted
-      if (fs.lstatSync(nextPath).isFile()) {
-        let file = fs.readFileSync(nextPath, 'utf8');
-        // Loop over replacement data in order to start find and replace
-        for (let replacement in replacements) {
-          // Build expression for finding values that need replaced globally in
-          // file
-          const expr = new RegExp(`(\{\{${replacement}\}\})`, 'g');
-          if (expr.test(file)) {
-            // Replace every instance of found replacement
-            file = file.replace(expr, replacements[replacement]);
+      if (items.includes(item)) {
+        // Build path to current item, if this is a directory it will be passed
+        // to next recursive call
+        let nextPath = `${path}/${item}`;
+        // Check if item is a file to determine file level find and replace is
+        // warranted
+        if (fs.lstatSync(nextPath).isFile()) {
+          let file = fs.readFileSync(nextPath, 'utf8');
+          // Loop over replacement data in order to start find and replace
+          for (let replacement in replacements) {
+            if (replacements.hasOwnProperty(replacement)) {
+              // Build expression for finding values that need replaced
+              // globally in file
+              const expr = new RegExp(`(\{\{${replacement}\}\})`, 'g');
+              if (expr.test(file)) {
+                // Replace every instance of found replacement
+                file = file.replace(expr, replacements[replacement]);
+              }
+            }
           }
+          // Rewrite newly modified with replacement data
+          fs.writeFileSync(nextPath, file);
         }
-        // Rewrite newly modified with replacement data
-        fs.writeFileSync(nextPath, file);
-      }
-      // Check if item is a directory in order to start recursive actions
-      if (fs.lstatSync(nextPath).isDirectory()) {
-        this.replaceData(nextPath);
+        // Check if item is a directory in order to start recursive actions
+        if (fs.lstatSync(nextPath).isDirectory()) {
+          this.replaceData(nextPath);
+        }
       }
     }
   }
